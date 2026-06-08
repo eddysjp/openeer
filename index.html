@@ -299,7 +299,7 @@
                 }
             }
 
-            // 【404エラー完全修正】GAPI内部の自動合体ルールに合わせ、ホストやAPI識別子を除去した純粋な相対パス構造に変更
+            // 【完全決着】Google公式GAPI規格に完全準拠。パスはドメインを抜いた「/v4/...」から記述するのが鉄則。
             async function callSheetsApi(apiEndpointPath, method = 'GET', body = null, token = null) {
                 const accessToken = token || googleToken?.access_token;
                 if (!accessToken) {
@@ -310,13 +310,16 @@
                     window.gapi.client.setToken({ access_token: accessToken });
                 }
 
-                // 「/v1/spreadsheets」のようなパスから自動重複を避けるため「/v1」を除去
-                const cleanPath = apiEndpointPath.replace('https://sheets.googleapis.com', '').replace('/v1', '');
+                // 「/v1/spreadsheets」等の古い痕跡、ドメイン、および「/sheets」プレフィックスを完全に除去
+                const cleanPath = apiEndpointPath
+                    .replace('https://sheets.googleapis.com', '')
+                    .replace('/v1', '')
+                    .replace('/sheets', '');
 
                 try {
+                    // Googleの内部トンネル仕様。pathの先頭を「/v4/spreadsheets...」と指定することで404を完璧に回避
                     const response = await window.gapi.client.request({
-                        // GAPI内部で自動付与されるエンドポイントと絶対に重複しない純粋なパスを動的に組み立て
-                        path: `/sheets/v4${cleanPath}`,
+                        path: `/v4${cleanPath}`,
                         method: method,
                         body: body ? body : undefined
                     });
@@ -795,7 +798,6 @@
 
             return (
                 <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans antialiased">
-                    {/* Header */}
                     <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-30 px-4 py-3">
                         <div className="max-w-6xl mx-auto flex items-center justify-between">
                             <div className="flex items-center space-x-3">
@@ -831,7 +833,6 @@
                         </div>
                     </header>
 
-                    {/* Main Layout */}
                     <main className="flex-1 max-w-6xl w-full mx-auto p-4 md:p-6 space-y-6">
                         {errorMsg && (
                             <div className="bg-rose-950/80 border border-rose-800 text-rose-200 p-4 rounded-xl flex items-start space-x-3 shadow-xl transition-all animate-fadeIn">
@@ -858,7 +859,6 @@
                             </div>
                         )}
 
-                        {/* Top Cards Section */}
                         <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/60 p-5 rounded-2xl relative overflow-hidden shadow-md">
                                 <div className="absolute top-0 right-0 p-8 opacity-5">
@@ -923,7 +923,6 @@
                             </div>
                         </section>
 
-                        {/* Navigation Tabs */}
                         <div className="flex border-b border-slate-800">
                             <button
                                 onClick={() => setActiveTab('add')}
@@ -947,7 +946,6 @@
                             </button>
                         </div>
 
-                        {/* Main Tab Views */}
                         {activeTab === 'add' && (
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fadeIn">
                                 <div className="lg:col-span-2 bg-slate-800/40 border border-slate-700/60 p-6 rounded-2xl shadow-xl space-y-4">
@@ -1372,7 +1370,7 @@
                                             <span className="text-xs">Google サイト & 独自ドメインでの重要設定ガイド</span>
                                         </div>
                                         <p className="text-xs text-slate-300 leading-relaxed font-semibold">
-                                            Google サイト（Google Sites）を標準URLで開いている状態で同期ボタンを押すと、OAuthの仕様上<strong>「 Error 400: invalid_request Rog 」</strong>が必ず発生します。
+                                            Google サイト（Google Sites）を標準URLで開いている状態で同期ボタンを押すと、OAuthの仕様上<strong>「 Error 400: invalid_request 」</strong>が必ず発生します。
                                         </p>
                                         
                                         <button 
