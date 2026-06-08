@@ -1,0 +1,1632 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Openeer - 開業準備経費マネージャー</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM (No 'crossorigin' attribute for perfect file:// compatibility) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <!-- Babel on-the-fly compiler (No 'crossorigin' attribute) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'Noto Sans JP', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .animate-fadeIn {
+            animation: fadeIn 0.3s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // セキュア環境外(file://など)でもエラーにならない安全なID生成器
+        const generateSafeId = () => {
+            try {
+                if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+                    return crypto.randomUUID();
+                }
+            } catch (e) {}
+            return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        };
+
+        // 安全なローカルストレージヘルパー（セキュリティ制限環境対策）
+        const getLocalStorageItem = (key, fallback) => {
+            try {
+                const item = localStorage.getItem(key);
+                return item ? JSON.parse(item) : fallback;
+            } catch (e) {
+                console.warn("LocalStorage access restricted:", e);
+                return fallback;
+            }
+        };
+
+        const setLocalStorageItem = (key, value) => {
+            try {
+                localStorage.setItem(key, JSON.stringify(value));
+            } catch (e) {
+                console.warn("LocalStorage write restricted:", e);
+            }
+        };
+
+        // 安全なセッションストレージヘルパー（ログインの一時保持用）
+        const getSessionStorageItem = (key, fallback) => {
+            try {
+                const item = sessionStorage.getItem(key);
+                return item ? JSON.parse(item) : fallback;
+            } catch (e) {
+                return fallback;
+            }
+        };
+
+        const setSessionStorageItem = (key, value) => {
+            try {
+                sessionStorage.setItem(key, JSON.stringify(value));
+            } catch (e) {}
+        };
+
+        // SVGアイコンヘルパー
+        const SVGIcon = ({ name, className = "w-5 h-5", ...props }) => {
+            const icons = {
+                Plus: <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />,
+                Settings: <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.43l-1.003.828c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.43l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />,
+                Download: <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />,
+                Upload: <path strokeLinecap="round" strokeLinejoin="round" d="M9 8.25l3-3m0 0l3 3m-3-3V16.5M19.5 19.5h-15" />,
+                Filter: <path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z" />,
+                Calendar: <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />,
+                Folder: <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-19.5 0A2.25 2.25 0 0 0 4.5 15h15a2.25 2.25 0 0 0 2.25-2.25m-19.5 0v.25A2.25 2.25 0 0 0 4.5 17.5h15a2.25 2.25 0 0 0 2.25-2.25V12.75M11.25 9.75V4.5a2.25 2.25 0 0 0-2.25-2.25H4.5A2.25 2.25 0 0 0 2.25 4.5v5.25" />,
+                AlertCircle: <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />,
+                CheckCircle2: <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />,
+                X: <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />,
+                Loader2: <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />,
+                FolderPlus: <path strokeLinecap="round" strokeLinejoin="round" d="M12 10.5v6m3-3h-6M2.25 12V4.5A2.25 2.25 0 0 1 4.5 2.25h4.123c.53 0 1.042.203 1.432.564l1.686 1.564c.39.36.902.564 1.432.564H19.5|M21.75 7.5v9a2.25 2.25 0 0 1-2.25 2.25h-15A2.25 2.25 0 0 1 2.25 16.5v-4.5Z" />,
+                Trash2: <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />,
+                Info: <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 111.086 1.042l-1.35 1.62a.75.75 0 01-1.086-.02l-.041-.02a.75.75 0 01.02-1.086l1.35-1.62a.75.75 0 011.08-.02zM12 8.25a.75.75 0 100-1.5.75.75 0 000 1.5zM21 12a9 9 0 11-18 0 9 9 0 0118 0z" />,
+                Database: <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125v-3.75m16.5 3.75v3.75c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125v-3.75" />,
+                CloudLightning: <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1.5M12 18.75V21M4.75 12h1.5m11.5 0h1.5M6.375 6.375l1.06 1.06m8.13 8.13l1.06 1.06m0-10.25l-1.06 1.06m-8.13 8.13l-1.06 1.06" />,
+                RefreshCw: <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />,
+                TrendingUp: <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18 9 11.25l4.5 4.5 6.75-6.75M19.5 8.25h3v3" />,
+                FileSpreadsheet: <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5A3.375 3.375 0 0 0 10.125 2.25H3.75A2.25 2.25 0 0 0 1.5 4.5v15a2.25 2.25 0 0 0 2.25 2.25h16.5A2.25 2.25 0 0 0 22.5 19.5v-5.25Z" />
+            };
+
+            return (
+                <svg 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    fill="none" 
+                    viewBox="0 0 24 24" 
+                    strokeWidth="2" 
+                    stroke="currentColor" 
+                    className={className}
+                    {...props}
+                >
+                    {icons[name] || null}
+                </svg>
+            );
+        };
+
+        // 曜日を安全に取得する関数（ブラウザ間の時間帯パース誤差を吸収）
+        const getWeekday = (dateStr) => {
+            if (!dateStr) return '';
+            const date = new Date(dateStr.replace(/-/g, '/'));
+            if (isNaN(date.getTime())) return '';
+            const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+            return weekdays[date.getDay()];
+        };
+
+        // 日付を「YYYY/MM/DD (曜)」に整形
+        const formatDateWithDay = (dateStr) => {
+            if (!dateStr) return '';
+            const formattedDate = dateStr.replace(/-/g, '/');
+            const weekday = getWeekday(dateStr);
+            return `${formattedDate} (${weekday})`;
+        };
+
+        const DEFAULT_CATEGORIES = [
+            '消耗品費',
+            '旅費交通費',
+            '通信費',
+            '広告宣伝費',
+            '会議費',
+            '新聞図書費',
+            '支払手数料',
+            '地代家賃',
+            'その他開業準備費'
+        ];
+
+        function App() {
+            const [expenses, setExpenses] = useState([]);
+            const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+            
+            // リロード時にGoogle接続が切れるのを防ぐためセッションストレージを使用
+            const [isGoogleConnected, setIsGoogleConnected] = useState(() => {
+                return getSessionStorageItem('openeer_is_connected', false);
+            });
+            const [googleToken, setGoogleToken] = useState(() => {
+                return getSessionStorageItem('openeer_google_token', null);
+            });
+
+            const [isLoading, setIsLoading] = useState(false);
+            const [errorMsg, setErrorMsg] = useState(null);
+            const [successMsg, setSuccessMsg] = useState(null);
+
+            const [settings, setSettings] = useState(() => {
+                return getLocalStorageItem('openeer_settings', {
+                    clientId: '',
+                    spreadsheetId: '',
+                    useGoogleSync: false
+                });
+            });
+
+            const [activeTab, setActiveTab] = useState('add');
+            const [showSettings, setShowSettings] = useState(false);
+            const [showCategoryManager, setShowCategoryManager] = useState(false);
+            const [showLocalFileHelp, setShowLocalFileHelp] = useState(true); // file:// 環境なら最初からマニュアルをオープンにするよう配慮
+
+            const [formData, setFormData] = useState({
+                date: new Date().toISOString().split('T')[0],
+                category: DEFAULT_CATEGORIES[0],
+                payee: '',
+                amount: '',
+                description: '',
+                noReceipt: false
+            });
+
+            const [newCategoryName, setNewCategoryName] = useState('');
+            const [filterCategory, setFilterCategory] = useState('ALL');
+            const [filterPeriod, setFilterPeriod] = useState('ALL');
+            const [filterStartDate, setFilterStartDate] = useState('');
+            const [filterEndDate, setFilterEndDate] = useState('');
+            const [gisLoaded, setGisLoaded] = useState(false);
+
+            // インポート用の参照ファイル入力
+            const fileInputRef = useRef(null);
+
+            // 初期ロード
+            useEffect(() => {
+                const cachedExpenses = getLocalStorageItem('openeer_expenses', []);
+                const cachedCategories = getLocalStorageItem('openeer_categories', DEFAULT_CATEGORIES);
+                setExpenses(cachedExpenses);
+                setCategories(cachedCategories);
+
+                // Google Identity Services SDKをロード
+                try {
+                    const script = document.createElement('script');
+                    script.src = 'https://accounts.google.com/gsi/client';
+                    script.async = true;
+                    script.defer = true;
+                    script.onload = () => setGisLoaded(true);
+                    document.body.appendChild(script);
+                } catch(e) {
+                    console.error("SDK load failed:", e);
+                }
+            }, []);
+
+            useEffect(() => {
+                setLocalStorageItem('openeer_settings', settings);
+            }, [settings]);
+
+            // アドレスバーが file:// かどうかを検証
+            const isFileProtocol = window.location.protocol === 'file:';
+
+            // クライアントIDが間違ってメールアドレス（@入り等）になっているかを検証する安全機能
+            const isClientIdInvalid = useMemo(() => {
+                if (!settings.clientId) return false;
+                const trimmed = settings.clientId.trim();
+                return trimmed.includes('@') || !trimmed.endsWith('.apps.googleusercontent.com');
+            }, [settings.clientId]);
+
+            // ローカルキャッシュの更新
+            function saveToLocalCache(newExpenses, newCategories) {
+                if (newExpenses) {
+                    setExpenses(newExpenses);
+                    setLocalStorageItem('openeer_expenses', newExpenses);
+                }
+                if (newCategories) {
+                    setCategories(newCategories);
+                    setLocalStorageItem('openeer_categories', newCategories);
+                }
+            }
+
+            function handleGoogleLogin() {
+                // ガードレール：file:// のダブルクリック起動状態でのログインを強力にブロック（Error 400 の完全防止）
+                if (isFileProtocol) {
+                    setErrorMsg("【Google同期の重要エラー防止】現在デスクトップのHTMLをダブルクリックで直接開いています（file://プロトコル）。この状態のままログインボタンを押すと、Googleのセキュリティ制限により『Error 400: invalid_request (アクセスをブロック)』が必ず発生します。解決するには、設定アイコン(歯車)を開き、オレンジ色の枠内に書かれている「解決マニュアル（ホスティング手順）」に沿って設定を完了してください。");
+                    setShowSettings(true);
+                    return;
+                }
+
+                if (!gisLoaded) {
+                    showNotification('Google認証ライブラリを読込中です。数秒待って再試行してください。', 'error');
+                    return;
+                }
+                if (!settings.clientId) {
+                    showNotification('設定画面から「Google クライアントID」を入力してください。', 'error');
+                    setShowSettings(true);
+                    return;
+                }
+                if (isClientIdInvalid) {
+                    showNotification('クライアントIDの設定値が正しくありません。エラー警告を確認してください。', 'error');
+                    setShowSettings(true);
+                    return;
+                }
+
+                setIsLoading(true);
+                try {
+                    const client = window.google.accounts.oauth2.initTokenClient({
+                        client_id: settings.clientId.trim(),
+                        scope: 'https://www.googleapis.com/auth/spreadsheets',
+                        callback: async (tokenResponse) => {
+                            if (tokenResponse.error) {
+                                setErrorMsg(`認証エラー: ${tokenResponse.error_description || tokenResponse.error}`);
+                                setIsLoading(false);
+                                return;
+                            }
+                            setGoogleToken(tokenResponse);
+                            setIsGoogleConnected(true);
+                            setSessionStorageItem('openeer_google_token', tokenResponse);
+                            setSessionStorageItem('openeer_is_connected', true);
+
+                            showNotification('Googleアカウントと連携しました！', 'success');
+                            if (settings.spreadsheetId) {
+                                await syncWithGoogle(tokenResponse.access_token);
+                            } else {
+                                showNotification('連携用のスプレッドシートIDを設定するか、「新規シートの自動生成」を行ってください。', 'info');
+                                setShowSettings(true);
+                            }
+                            setIsLoading(false);
+                        },
+                    });
+                    client.requestAccessToken({ prompt: 'consent' });
+                } catch (err) {
+                    setErrorMsg(`ログインプロセスの起動に失敗しました: ${err.message}`);
+                    setIsLoading(false);
+                }
+            }
+
+            async function callSheetsApi(url, method = 'GET', body = null, token = null) {
+                const accessToken = token || googleToken?.access_token;
+                if (!accessToken) {
+                    throw new Error('Google認証トークンが見つかりません。「設定」アイコンより再度ログイン（再連携）を行ってください。');
+                }
+
+                const headers = {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                };
+
+                const config = { method, headers };
+                if (body) config.body = JSON.stringify(body);
+
+                const response = await fetch(url, config);
+                if (!response.ok) {
+                    const errText = await response.text();
+                    throw new Error(`APIエラー (${response.status}): ${errText}`);
+                }
+                return response.json();
+            }
+
+            async function handleCreateNewSpreadsheet() {
+                if (!isGoogleConnected) {
+                    showNotification('まずGoogleアカウントにログインしてください。', 'error');
+                    return;
+                }
+                setIsLoading(true);
+                try {
+                    const createRes = await callSheetsApi(
+                        'https://sheets.googleapis.com/v1/spreadsheets',
+                        'POST',
+                        {
+                            properties: { title: `Openeer_開業準備費管理シート` },
+                            sheets: [
+                                { properties: { title: '開業費データ' } },
+                                { properties: { title: '勘定科目マスター' } }
+                            ]
+                        }
+                    );
+
+                    const newSpreadsheetId = createRes.spreadsheetId;
+                    setSettings(prev => ({ ...prev, spreadsheetId: newSpreadsheetId, useGoogleSync: true }));
+                    showNotification('Googleスプレッドシートを新規作成しました！', 'success');
+
+                    await callSheetsApi(
+                        `https://sheets.googleapis.com/v1/spreadsheets/${newSpreadsheetId}/values/開業費データ!A1:G1?valueInputOption=USER_ENTERED`,
+                        'PUT',
+                        { values: [['ID', '日付', '勘定科目', '支払先', '金額', '内容', '領収書なし(確認用)']] }
+                    );
+
+                    const catValues = categories.map(c => [c]);
+                    await callSheetsApi(
+                        `https://sheets.googleapis.com/v1/spreadsheets/${newSpreadsheetId}/values/勘定科目マスター!A1:A${categories.length}?valueInputOption=USER_ENTERED`,
+                        'PUT',
+                        { values: catValues }
+                    );
+
+                    showNotification('初期設定がすべて完了しました。以降自動で同期されます。', 'success');
+                } catch (err) {
+                    setErrorMsg(`スプレッドシート自動生成エラー: ${err.message}`);
+                } finally {
+                    setIsLoading(false);
+                }
+            }
+
+            async function syncWithGoogle(forcedToken = null) {
+                const activeToken = forcedToken || googleToken?.access_token;
+                if (!activeToken) {
+                    showNotification('同期するにはまず「Googleログイン」を行ってください。', 'error');
+                    return;
+                }
+                if (!settings.spreadsheetId) {
+                    showNotification('同期先のスプレッドシートIDが未設定です。', 'error');
+                    return;
+                }
+
+                setIsLoading(true);
+                try {
+                    const spreadsheetMeta = await callSheetsApi(
+                        `https://sheets.googleapis.com/v1/spreadsheets/${settings.spreadsheetId}`,
+                        'GET',
+                        null,
+                        activeToken
+                    );
+
+                    const sheetNames = spreadsheetMeta.sheets.map(s => s.properties.title);
+                    const sheetsToCreate = [];
+                    if (!sheetNames.includes('開業費データ')) sheetsToCreate.push('開業費データ');
+                    if (!sheetNames.includes('勘定科目マスター')) sheetsToCreate.push('勘定科目マスター');
+
+                    if (sheetsToCreate.length > 0) {
+                        await callSheetsApi(
+                            `https://sheets.googleapis.com/v1/spreadsheets/${settings.spreadsheetId}:batchUpdate`,
+                            'POST',
+                            {
+                                requests: sheetsToCreate.map(name => ({
+                                    addSheet: { properties: { title: name } }
+                                }))
+                            },
+                            activeToken
+                        );
+                        if (sheetsToCreate.includes('開業費データ')) {
+                            await callSheetsApi(
+                                `https://sheets.googleapis.com/v1/spreadsheets/${settings.spreadsheetId}/values/開業費データ!A1:G1?valueInputOption=USER_ENTERED`,
+                                    'PUT',
+                                { values: [['ID', '日付', '勘定科目', '支払先', '金額', '内容', '領収書なし(確認用)']] },
+                                activeToken
+                            );
+                        }
+                    }
+
+                    const dataRes = await callSheetsApi(
+                        `https://sheets.googleapis.com/v1/spreadsheets/${settings.spreadsheetId}/values/開業費データ!A2:G10000`,
+                        'GET',
+                        null,
+                        activeToken
+                    );
+                    
+                    const parsedExpenses = [];
+                    if (dataRes.values) {
+                        dataRes.values.forEach(row => {
+                            if (row[0]) {
+                                parsedExpenses.push({
+                                    id: row[0],
+                                    date: row[1] || '',
+                                    category: row[2] || '',
+                                    payee: row[3] || '',
+                                    amount: parseFloat(row[4]) || 0,
+                                    description: row[5] || '',
+                                    noReceipt: row[6] === 'TRUE'
+                                });
+                            }
+                        });
+                    }
+
+                    const catRes = await callSheetsApi(
+                        `https://sheets.googleapis.com/v1/spreadsheets/${settings.spreadsheetId}/values/勘定科目マスター!A1:A100`,
+                        'GET',
+                        null,
+                        activeToken
+                    );
+
+                    let parsedCategories = DEFAULT_CATEGORIES;
+                    if (catRes.values && catRes.values.length > 0) {
+                        parsedCategories = catRes.values.map(r => r[0]).filter(Boolean);
+                    } else {
+                        await callSheetsApi(
+                            `https://sheets.googleapis.com/v1/spreadsheets/${settings.spreadsheetId}/values/勘定科目マスター!A1:A${categories.length}?valueInputOption=USER_ENTERED`,
+                            'PUT',
+                            { values: categories.map(c => [c]) },
+                            activeToken
+                        );
+                    }
+
+                    saveToLocalCache(parsedExpenses, parsedCategories);
+                    showNotification('Googleスプレッドシートの最新データを同期完了しました！', 'success');
+                } catch (err) {
+                    setErrorMsg(`同期に失敗しました: ${err.message}`);
+                } finally {
+                    setIsLoading(false);
+                }
+            }
+
+            // 登録ボタン of クリックイベント用
+            async function handleAddExpense() {
+                if (!formData.amount || isNaN(formData.amount)) {
+                    showNotification('有効な金額（数値）を入力してください。', 'error');
+                    return;
+                }
+
+                const newExpense = {
+                    id: generateSafeId(),
+                    date: formData.date,
+                    category: formData.category,
+                    payee: formData.payee || '指定なし',
+                    amount: parseFloat(formData.amount),
+                    description: formData.description || '',
+                    noReceipt: formData.noReceipt
+                };
+
+                const updatedExpenses = [newExpense, ...expenses];
+
+                if (settings.useGoogleSync && isGoogleConnected) {
+                    setIsLoading(true)
+                    try {
+                        const rowData = [
+                            newExpense.id,
+                            newExpense.date,
+                            newExpense.category,
+                            newExpense.payee,
+                            newExpense.amount,
+                            newExpense.description,
+                            newExpense.noReceipt ? 'TRUE' : 'FALSE'
+                        ];
+
+                        await callSheetsApi(
+                            `https://sheets.googleapis.com/v1/spreadsheets/${settings.spreadsheetId}/values/開業費データ!A2:append?valueInputOption=USER_ENTERED`,
+                            'POST',
+                            { values: [rowData] }
+                        );
+
+                        saveToLocalCache(updatedExpenses, null);
+                        showNotification('スプレッドシートに正常に保存・追加しました！', 'success');
+                        resetForm();
+                        setActiveTab('list');
+                    } catch (err) {
+                        setErrorMsg(`Google保存エラー: ${err.message}。ローカルのみに保存されました。`);
+                        saveToLocalCache(updatedExpenses, null);
+                        resetForm();
+                    } finally {
+                        setIsLoading(false);
+                    }
+                } else {
+                    saveToLocalCache(updatedExpenses, null);
+                    showNotification('ローカルストレージへ保存しました（Google同期オフ）。', 'success');
+                    resetForm();
+                    setActiveTab('list');
+                }
+            }
+
+            async function handleToggleNoReceipt(id, currentVal) {
+                const updatedExpenses = expenses.map(item => {
+                    if (item.id === id) {
+                        return { ...item, noReceipt: !currentVal };
+                    }
+                    return item;
+                });
+
+                saveToLocalCache(updatedExpenses, null);
+
+                if (settings.useGoogleSync && isGoogleConnected) {
+                    try {
+                        const dataRes = await callSheetsApi(
+                            `https://sheets.googleapis.com/v1/spreadsheets/${settings.spreadsheetId}/values/開業費データ!A1:A10000`,
+                            'GET'
+                        );
+                        
+                        let rowIndex = -1;
+                        if (dataRes.values) {
+                            rowIndex = dataRes.values.findIndex(row => row[0] === id) + 1;
+                        }
+
+                        if (rowIndex > 1) {
+                            await callSheetsApi(
+                                `https://sheets.googleapis.com/v1/spreadsheets/${settings.spreadsheetId}/values/開業費データ!G${rowIndex}?valueInputOption=USER_ENTERED`,
+                                'PUT',
+                                { values: [[(!currentVal) ? 'TRUE' : 'FALSE']] }
+                            );
+                            showNotification('クラウド側のチェック状態を同期しました。', 'success');
+                        } else {
+                            showNotification('スプレッドシート上に対応するデータ行がありません。再度手動同期してください。', 'error');
+                        }
+                    } catch (err) {
+                        setErrorMsg(`チェック状態の同期に失敗しました: ${err.message}`);
+                    }
+                }
+            }
+
+            async function handleAddCategory() {
+                if (!newCategoryName.trim()) return;
+                if (categories.includes(newCategoryName.trim())) {
+                    showNotification('その勘定科目は既に登録されています。', 'error');
+                    return;
+                }
+
+                const updatedCategories = [...categories, newCategoryName.trim()];
+                saveToLocalCache(null, updatedCategories);
+                setNewCategoryName('');
+
+                if (settings.useGoogleSync && isGoogleConnected) {
+                    setIsLoading(true);
+                    try {
+                        await callSheetsApi(
+                            `https://sheets.googleapis.com/v1/spreadsheets/${settings.spreadsheetId}/values/勘定科目マスター!A1:A${updatedCategories.length}?valueInputOption=USER_ENTERED`,
+                            'PUT',
+                            { values: updatedCategories.map(c => [c]) }
+                        );
+                        showNotification('勘定科目をクラウド同期しました！', 'success');
+                    } catch (err) {
+                        setErrorMsg(`勘定科目のクラウド同期に失敗しました: ${err.message}`);
+                    } finally {
+                        setIsLoading(false);
+                    }
+                } else {
+                    showNotification('勘定科目をローカルに追加しました。', 'success');
+                }
+            }
+
+            async function handleDeleteCategory(catToDelete) {
+                if (categories.length <= 1) {
+                    showNotification('最低1つの勘定科目が必要です。', 'error');
+                    return;
+                }
+                const updatedCategories = categories.filter(c => c !== catToDelete);
+                saveToLocalCache(null, updatedCategories);
+
+                if (settings.useGoogleSync && isGoogleConnected) {
+                    setIsLoading(true);
+                    try {
+                        await callSheetsApi(
+                            `https://sheets.googleapis.com/v1/spreadsheets/${settings.spreadsheetId}/values/勘定科目マスター!A1:A100`,
+                            'CLEAR',
+                            {}
+                        );
+                        await callSheetsApi(
+                            `https://sheets.googleapis.com/v1/spreadsheets/${settings.spreadsheetId}/values/勘定科目マスター!A1:A${updatedCategories.length}?valueInputOption=USER_ENTERED`,
+                            'PUT',
+                            { values: updatedCategories.map(c => [c]) }
+                        );
+                        showNotification('勘定科目をクラウドから削除しました。', 'success');
+                    } catch (err) {
+                        setErrorMsg(`勘定科目の削除同期に失敗しました: ${err.message}`);
+                    } finally {
+                        setIsLoading(false);
+                    }
+                } else {
+                    showNotification('勘定科目を削除しました。', 'success');
+                }
+            }
+
+            function resetForm() {
+                setFormData({
+                    date: new Date().toISOString().split('T')[0],
+                    category: categories[0] || '消耗品費',
+                    payee: '',
+                    amount: '',
+                    description: '',
+                    noReceipt: false
+                });
+            }
+
+            const filteredExpenses = useMemo(() => {
+                const filtered = expenses.filter(item => {
+                    if (filterCategory !== 'ALL' && item.category !== filterCategory) return false;
+                    if (filterPeriod !== 'ALL') {
+                        const itemDate = new Date(item.date.replace(/-/g, '/'));
+                        const today = new Date();
+
+                        if (filterPeriod === '30') {
+                            const limitDate = new Date();
+                            limitDate.setDate(today.getDate() - 30);
+                            if (itemDate < limitDate) return false;
+                        } else if (filterPeriod === '90') {
+                            const limitDate = new Date();
+                            limitDate.setDate(today.getDate() - 90);
+                            if (itemDate < limitDate) return false;
+                        } else if (filterPeriod === 'YTD') {
+                            const currentYearStart = new Date(today.getFullYear(), 0, 1);
+                            if (itemDate < currentYearStart) return false;
+                        } else if (filterPeriod === 'CUSTOM') {
+                            if (filterStartDate && itemDate < new Date(filterStartDate.replace(/-/g, '/'))) return false;
+                            if (filterEndDate && itemDate > new Date(filterEndDate.replace(/-/g, '/'))) return false;
+                        }
+                    }
+                    return true;
+                });
+
+                // 一流のご要望：日付を「古い日付から」（昇順）並べ替えます
+                return filtered.sort((a, b) => {
+                    const dateA = new Date(a.date.replace(/-/g, '/'));
+                    const dateB = new Date(b.date.replace(/-/g, '/'));
+                    return dateA - dateB;
+                });
+            }, [expenses, filterCategory, filterPeriod, filterStartDate, filterEndDate]);
+
+            const totalAmount = useMemo(() => {
+                return filteredExpenses.reduce((sum, item) => sum + item.amount, 0);
+            }, [filteredExpenses]);
+
+            const noReceiptCount = useMemo(() => {
+                return filteredExpenses.filter(item => item.noReceipt).length;
+            }, [filteredExpenses]);
+
+            function handleExportCSV() {
+                if (filteredExpenses.length === 0) {
+                    showNotification('エクスポートするデータがありません。', 'error');
+                    return;
+                }
+
+                const headers = ['日付', '勘定科目', '支払先', '金額(税込)', '内容', '領収書なし'];
+                const rows = filteredExpenses.map(item => [
+                    item.date,
+                    item.category,
+                    item.payee,
+                    item.amount,
+                    item.description.replace(/"/g, '""'),
+                    item.noReceipt ? 'あり' : 'なし'
+                ]);
+
+                const csvContent = "\uFEFF" + [headers.join(','), ...rows.map(e => e.map(val => `"${val}"`).join(','))].join('\n');
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.setAttribute('href', url);
+                link.setAttribute('download', `開業費プールデータ_${new Date().toISOString().split('T')[0]}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                showNotification('CSVを正常にエクスポートしました！', 'success');
+            }
+
+            // CSVインポート（データ復旧）処理
+            function handleImportCSV(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        let text = e.target.result;
+                        
+                        // UTF-8 BOMのトリム
+                        if (text.startsWith('\uFEFF')) {
+                            text = text.substring(1);
+                        }
+
+                        const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
+                        if (lines.length < 2) {
+                            showNotification('有効なCSVデータがありません。', 'error');
+                            return;
+                        }
+
+                        // CSVパース用のセキュアロジック (ダブルクォーテーションやカンマのエスケープに対応)
+                        const parseCSVLine = (lineText) => {
+                            let parts = [];
+                            let current = "";
+                            let inQuotes = false;
+                            for (let i = 0; i < lineText.length; i++) {
+                                let char = lineText.charAt(i);
+                                if (char === '"') {
+                                    inQuotes = !inQuotes;
+                                } else if (char === ',' && !inQuotes) {
+                                    parts.push(current.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+                                    current = "";
+                                } else {
+                                    current += char;
+                                }
+                            }
+                            parts.push(current.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+                            return parts;
+                        };
+
+                        const headerParts = parseCSVLine(lines[0]);
+                        // ヘッダー行の検証
+                        if (headerParts[0] !== '日付' || headerParts[1] !== '勘定科目' || headerParts[3] !== '金額(税込)') {
+                            showNotification('CSVのヘッダー形式が一致しません。OpeneerからエクスポートしたCSVをご使用ください。', 'error');
+                            return;
+                        }
+
+                        const importedExpenses = [];
+                        for (let i = 1; i < lines.length; i++) {
+                            const row = parseCSVLine(lines[i]);
+                            if (row.length >= 5) {
+                                importedExpenses.push({
+                                    id: generateSafeId(),
+                                    date: row[0].replace(/\//g, '-'), // 形式統一 YYYY-MM-DD
+                                    category: row[1] || 'その他開業準備費',
+                                    payee: row[2] || '指定なし',
+                                    amount: parseFloat(row[3]) || 0,
+                                    description: row[4] || '',
+                                    noReceipt: row[5] === 'あり'
+                                });
+                            }
+                        }
+
+                        if (importedExpenses.length === 0) {
+                            showNotification('インポート可能な経費データがありませんでした。', 'error');
+                            return;
+                        }
+
+                        // 一括上書き復旧
+                        saveToLocalCache(importedExpenses, null);
+                        showNotification(`CSVから ${importedExpenses.length} 件の開業費データを完全に復元しました！`, 'success');
+                        
+                        // インプットをクリア
+                        if (fileInputRef.current) fileInputRef.current.value = "";
+                    } catch (err) {
+                        setErrorMsg(`CSVのパースに失敗しました: ${err.message}`);
+                    }
+                };
+                reader.readAsText(file, "UTF-8");
+            }
+
+            function showNotification(msg, type = 'info') {
+                if (type === 'success') {
+                    setSuccessMsg(msg);
+                    setTimeout(() => setSuccessMsg(null), 4000);
+                } else if (type === 'error') {
+                    setErrorMsg(msg);
+                    setTimeout(() => setErrorMsg(null), 6000);
+                } else {
+                    setSuccessMsg(`【お知らせ】${msg}`);
+                    setTimeout(() => setSuccessMsg(null), 5000);
+                }
+            }
+
+            return (
+                <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans antialiased">
+                    {/* Header */}
+                    <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-30 px-4 py-3">
+                        <div className="max-w-6xl mx-auto flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                                <div className="bg-emerald-500 p-2 rounded-xl text-slate-950 shadow-lg shadow-emerald-500/20">
+                                    <SVGIcon name="TrendingUp" className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
+                                        Openeer
+                                    </h1>
+                                    <p className="text-xs text-slate-400">開業費プールマネージャー</p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center space-x-2">
+                                <div className={`hidden md:flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-medium border ${
+                                    settings.useGoogleSync && isGoogleConnected 
+                                        ? 'bg-emerald-950/40 text-emerald-400 border-emerald-800' 
+                                        : 'bg-slate-800 text-slate-400 border-slate-700'
+                                }`}>
+                                    <SVGIcon name="Database" className="w-3.5 h-3.5" />
+                                    <span>{settings.useGoogleSync && isGoogleConnected ? 'Google同期中' : 'ローカルデモモード'}</span>
+                                </div>
+
+                                <button 
+                                    onClick={() => setShowSettings(true)}
+                                    className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-200 transition-colors"
+                                    title="連携・基本設定"
+                                >
+                                    <SVGIcon name="Settings" className="w-5 h-5" />
+                                </button>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Main Layout */}
+                    <main className="flex-1 max-w-6xl w-full mx-auto p-4 md:p-6 space-y-6">
+                        {/* Banner Notices */}
+                        {errorMsg && (
+                            <div className="bg-rose-950/80 border border-rose-800 text-rose-200 p-4 rounded-xl flex items-start space-x-3 shadow-xl transition-all animate-fadeIn">
+                                <SVGIcon name="AlertCircle" className="w-5 h-5 flex-shrink-0 mt-0.5 text-rose-400 animate-pulse" />
+                                <div className="flex-1">
+                                    <p className="font-semibold text-sm">システム通知 / エラー</p>
+                                    <p className="text-xs mt-0.5 opacity-90">{errorMsg}</p>
+                                </div>
+                                <button onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-rose-100">
+                                    <SVGIcon name="X" className="w-4 h-4" />
+                                </button>
+                            </div>
+                        )}
+
+                        {successMsg && (
+                            <div className="bg-emerald-950/80 border border-emerald-800 text-emerald-200 p-4 rounded-xl flex items-start space-x-3 shadow-xl transition-all animate-fadeIn">
+                                <SVGIcon name="CheckCircle2" className="w-5 h-5 flex-shrink-0 mt-0.5 text-emerald-400" />
+                                <div className="flex-1">
+                                    <p className="text-sm font-medium">{successMsg}</p>
+                                </div>
+                                <button onClick={() => setSuccessMsg(null)} className="text-emerald-400 hover:text-emerald-100">
+                                    <SVGIcon name="X" className="w-4 h-4" />
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Top Cards Section */}
+                        <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/60 p-5 rounded-2xl relative overflow-hidden shadow-md">
+                                <div className="absolute top-0 right-0 p-8 opacity-5">
+                                    <SVGIcon name="TrendingUp" className="w-24 h-24 text-emerald-400" />
+                                </div>
+                                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                                    {filterPeriod === 'ALL' && filterCategory === 'ALL' ? '全開業費 合計値' : 'フィルター適用後 合計値'}
+                                </span>
+                                <div className="mt-2 flex items-baseline space-x-1">
+                                    <span className="text-3xl font-extrabold text-emerald-400 tracking-tight">
+                                        ¥{totalAmount.toLocaleString()}
+                                    </span>
+                                    <span className="text-xs text-slate-400">（税込）</span>
+                                </div>
+                                <p className="text-xs text-slate-400 mt-2">
+                                    対象件数: <span className="font-semibold text-slate-200">{filteredExpenses.length}件</span>
+                                </p>
+                            </div>
+
+                            <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/60 p-5 rounded-2xl relative overflow-hidden shadow-md">
+                                <div className="absolute top-0 right-0 p-8 opacity-5">
+                                    <SVGIcon name="AlertCircle" className="w-24 h-24 text-amber-400" />
+                                </div>
+                                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                                    領収書なし（再確認対象）
+                                </span>
+                                <div className="mt-2 flex items-baseline space-x-1">
+                                    <span className="text-3xl font-extrabold text-amber-400 tracking-tight">
+                                        {noReceiptCount}
+                                    </span>
+                                    <span className="text-xs text-slate-400">件</span>
+                                </div>
+                                <p className="text-xs text-slate-400 mt-2">
+                                    「買ったのにレシートが無い」要注意経費
+                                </p>
+                            </div>
+
+                            <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/60 p-5 rounded-2xl flex flex-col justify-between shadow-md">
+                                <div>
+                                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">
+                                        現在の同期ステータス
+                                    </span>
+                                    <div className="mt-2 flex items-center space-x-2">
+                                        <div className={`w-2.5 h-2.5 rounded-full ${settings.useGoogleSync && isGoogleConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-600'}`} />
+                                        <span className="font-bold text-sm">
+                                            {settings.useGoogleSync && isGoogleConnected ? 'Googleドライブ 同期中' : 'ローカル限定モード'}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="mt-4 md:mt-0 flex space-x-2">
+                                    {settings.useGoogleSync && (
+                                        <button
+                                            onClick={() => syncWithGoogle()}
+                                            disabled={isLoading}
+                                            className="flex items-center justify-center space-x-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 text-slate-200 hover:text-white rounded-lg text-xs font-medium transition-colors w-full"
+                                        >
+                                            {isLoading ? <SVGIcon name="Loader2" className="w-3.5 h-3.5 animate-spin" /> : <SVGIcon name="RefreshCw" className="w-3.5 h-3.5" />}
+                                            <span>今すぐ手動同期</span>
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* Navigation Tabs */}
+                        <div className="flex border-b border-slate-800">
+                            <button
+                                onClick={() => setActiveTab('add')}
+                                className={`px-6 py-3 font-semibold text-sm flex items-center space-x-2 border-b-2 transition-colors ${
+                                    activeTab === 'add' 
+                                        ? 'border-emerald-500 text-emerald-400 bg-slate-800/20' 
+                                        : 'border-transparent text-slate-400 hover:text-slate-200'
+                                }`}>
+                                <SVGIcon name="Plus" className="w-4 h-4" />
+                                <span>開業費の新規追加</span>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('list')}
+                                className={`px-6 py-3 font-semibold text-sm flex items-center space-x-2 border-b-2 transition-colors ${
+                                    activeTab === 'list' 
+                                        ? 'border-emerald-500 text-emerald-400 bg-slate-800/20' 
+                                        : 'border-transparent text-slate-400 hover:text-slate-200'
+                                }`}>
+                                <SVGIcon name="Database" className="w-4 h-4" />
+                                <span>経費の一覧と確認 ({expenses.length})</span>
+                            </button>
+                        </div>
+
+                        {/* Main Tab Views */}
+                        {activeTab === 'add' && (
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fadeIn">
+                                {/* Form component */}
+                                <div className="lg:col-span-2 bg-slate-800/40 border border-slate-700/60 p-6 rounded-2xl shadow-xl space-y-4">
+                                    <div className="flex items-center justify-between pb-2 border-b border-slate-700">
+                                        <h2 className="text-lg font-bold text-slate-200 flex items-center space-x-2">
+                                            <span>経費データの登録</span>
+                                        </h2>
+                                        <span className="text-xs text-slate-400">* 直感的でスムーズな入力フォーム</span>
+                                    </div>
+
+                                    {/* Prevent accidental Enter key submissions */}
+                                    <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {/* HTML5標準の日付ピッカー。文字を100%透明にして背後にプレビューを重ねることで、曜日の空の () や崩れた文字を完全に隠蔽。 */}
+                                            <div className="space-y-1">
+                                                <div className="flex justify-between items-center text-xs font-semibold text-slate-400">
+                                                    <span>支払日付</span>
+                                                </div>
+                                                <div className="relative">
+                                                    {/* 前面：きれいにフォーマットされた日付＋曜日テキストを表示。pointer-events-none でクリックを背後に通す */}
+                                                    <div className="absolute inset-0 flex items-center pl-10 text-sm text-slate-100 pointer-events-none z-10 font-medium">
+                                                        {formData.date ? formatDateWithDay(formData.date) : "日付を選択"}
+                                                    </div>
+
+                                                    <SVGIcon name="Calendar" className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-20" />
+                                                    
+                                                    {/* 背面：標準カレンダー。文字色を完全に透明(text-transparent)にすることで、ブラウザ自動の () や崩れた文字を完全に隠蔽。かつクリック判定は前面にあるので、100%カレンダーが起動する。 */}
+                                                    <input
+                                                        type="date"
+                                                        required
+                                                        value={formData.date}
+                                                        onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                                                        className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 pl-10 pr-3 text-sm focus:outline-none focus:border-emerald-500 text-transparent select-none cursor-pointer relative z-0"
+                                                        style={{ colorScheme: 'dark' }}
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {/* Category picker */}
+                                            <div className="space-y-1">
+                                                <div className="flex justify-between items-center">
+                                                    <label className="text-xs font-semibold text-slate-400">勘定科目</label>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowCategoryManager(true)}
+                                                        className="text-[11px] text-emerald-400 hover:underline flex items-center space-x-1"
+                                                    >
+                                                        <SVGIcon name="FolderPlus" className="w-3 h-3" />
+                                                        <span>科目の編集</span>
+                                                    </button>
+                                                </div>
+                                                <div className="relative">
+                                                    <SVGIcon name="Folder" className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                                    <select
+                                                        value={formData.category}
+                                                        onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                                                        className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 pl-10 pr-3 text-sm focus:outline-none focus:border-emerald-500 transition-colors appearance-none"
+                                                    >
+                                                        {categories.map((cat, idx) => (
+                                                            <option key={idx} value={cat}>{cat}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {/* Payee */}
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-semibold text-slate-400 block">支払先（店舗名・取引先など）</label>
+                                                <input
+                                                    type="text"
+                                                    placeholder="例：Amazon, ヨドバシカメラ"
+                                                    required
+                                                    value={formData.payee}
+                                                    onChange={(e) => setFormData({ ...formData, payee: e.target.value })}
+                                                    className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-emerald-500 transition-colors"
+                                                />
+                                            </div>
+
+                                            {/* Amount */}
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-semibold text-slate-400 block">金額（税込）</label>
+                                                <div className="relative">
+                                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-semibold">¥</span>
+                                                    <input
+                                                        type="number"
+                                                        placeholder="例: 12800"
+                                                        required
+                                                        value={formData.amount}
+                                                        onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                                                        className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 pl-8 pr-3 text-sm font-bold text-emerald-400 focus:outline-none focus:border-emerald-500 transition-colors"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Description */}
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-semibold text-slate-400 block">内容（購入目的・詳細など）</label>
+                                            <textarea
+                                                placeholder="例：開発用モニター、事務用品 of 購入、打合せ茶菓代"
+                                                rows="3"
+                                                value={formData.description}
+                                                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                                className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2 px-3 text-sm focus:outline-none focus:border-emerald-500 transition-colors resize-none"
+                                            ></textarea>
+                                        </div>
+
+                                        {/* Flag checkbox */}
+                                        <div className="bg-amber-950/20 border border-amber-900/40 p-4 rounded-xl flex items-start space-x-3">
+                                            <input
+                                                type="checkbox"
+                                                id="noReceipt"
+                                                checked={formData.noReceipt}
+                                                onChange={(e) => setFormData({ ...formData, noReceipt: e.target.checked })}
+                                                className="w-4.5 h-4.5 rounded text-emerald-500 bg-slate-900 border-slate-700 focus:ring-emerald-500 mt-1 cursor-pointer"
+                                            />
+                                            <div className="flex-1 cursor-pointer" onClick={() => setFormData({ ...formData, noReceipt: !formData.noReceipt })}>
+                                                <label htmlFor="noReceipt" className="text-sm font-bold text-amber-300 block cursor-pointer">
+                                                    領収書なし経費（買ったのにレシートが無い・紛失など）
+                                                </label>
+                                                <p className="text-xs text-amber-200/70 mt-0.5">
+                                                    チェックを入れると、一覧画面で目立ち、後でスプレッドシートや出金伝票と付き合わせる際の目印になります。
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* Button (type="button" to prevent Enter-key submit) */}
+                                        <button
+                                            type="button"
+                                            onClick={handleAddExpense}
+                                            disabled={isLoading}
+                                            className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-bold py-3 px-4 rounded-xl shadow-lg shadow-emerald-500/20 hover:opacity-90 active:scale-[0.99] transition-all flex items-center justify-center space-x-2 disabled:opacity-50"
+                                        >
+                                            {isLoading ? (
+                                                <SVGIcon name="Loader2" className="w-5 h-5 animate-spin text-slate-950" />
+                                            ) : (
+                                                <>
+                                                    <SVGIcon name="Plus" className="w-5 h-5 text-slate-950" />
+                                                    <span>開業費データを追加保存</span>
+                                                </>
+                                            )}
+                                        </button>
+                                    </form>
+                                </div>
+
+                                {/* Sidebar Help Panel */}
+                                <div className="space-y-4">
+                                    <div className="bg-slate-800/40 border border-slate-700/60 p-5 rounded-2xl space-y-3">
+                                        <h3 className="font-bold text-slate-200 text-sm flex items-center space-x-2">
+                                            <SVGIcon name="Info" className="w-4 h-4 text-emerald-400" />
+                                            <span>開業準備プール（開業費）</span>
+                                        </h3>
+                                        <p className="text-xs text-slate-400 leading-relaxed">
+                                            個人事業主として開業する前に準備として支払った費用は、開業日に「まとめてプールされた必要経費」として取り扱われます。帳簿を作る手間を省き、まずは領収書の存在確認（チェック）を徹底することが賢いやり方です。
+                                        </p>
+                                        <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-800">
+                                            <p className="text-[11px] text-slate-400 font-semibold uppercase">対象物の例：</p>
+                                            <ul className="text-[11px] text-slate-300 mt-1 list-disc list-inside space-y-1">
+                                                <li>打合せお茶代、接待費（会議費）</li>
+                                                <li>オフィス、コワーキングの月謝</li>
+                                                <li>仕事用パソコン、ツール、文具</li>
+                                                <li>技術書籍、リサーチ費用</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+
+                                    {/* Sidebar Recents */}
+                                    <div className="bg-slate-800/40 border border-slate-700/60 p-5 rounded-2xl">
+                                        <h3 className="font-bold text-slate-200 text-sm mb-3">直近の入力状況</h3>
+                                        {expenses.length === 0 ? (
+                                            <p className="text-xs text-slate-500">まだ登録されたデータはありません。</p>
+                                        ) : (
+                                            <div className="space-y-2.5 max-h-60 overflow-y-auto">
+                                                {expenses.slice(0, 5).map((exp, idx) => (
+                                                    <div key={idx} className="flex justify-between items-center text-xs border-b border-slate-800 pb-2">
+                                                        <div className="truncate pr-2">
+                                                            <p className="font-medium text-slate-200 truncate">{exp.payee}</p>
+                                                            <p className="text-[10px] text-slate-400">{formatDateWithDay(exp.date)} · {exp.category}</p>
+                                                        </div>
+                                                        <span className="font-bold text-slate-100 flex-shrink-0">¥{exp.amount.toLocaleString()}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Viewing List Tab */}
+                        {activeTab === 'list' && (
+                            <div className="bg-slate-800/40 border border-slate-700/60 p-5 rounded-2xl shadow-xl space-y-6 animate-fadeIn">
+                                {/* Filters Header */}
+                                <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-4 border-b border-slate-700">
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-grow">
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-semibold text-slate-400 flex items-center space-x-1">
+                                                <SVGIcon name="Folder" className="w-3 h-3 text-slate-400" />
+                                                <span>勘定科目フィルター</span>
+                                            </label>
+                                            <select
+                                                value={filterCategory}
+                                                onChange={(e) => setFilterCategory(e.target.value)}
+                                                className="w-full bg-slate-900 border border-slate-700 rounded-lg py-1.5 px-3 text-xs focus:outline-none focus:border-emerald-500"
+                                            >
+                                                <option value="ALL">すべての科目</option>
+                                                {categories.map((cat, idx) => (
+                                                    <option key={idx} value={cat}>{cat}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-semibold text-slate-400 flex items-center space-x-1">
+                                                <SVGIcon name="Calendar" className="w-3 h-3 text-slate-400" />
+                                                <span>表示期間</span>
+                                            </label>
+                                            <select
+                                                value={filterPeriod}
+                                                onChange={(e) => setFilterPeriod(e.target.value)}
+                                                className="w-full bg-slate-900 border border-slate-700 rounded-lg py-1.5 px-3 text-xs focus:outline-none focus:border-emerald-500"
+                                            >
+                                                <option value="ALL">全期間</option>
+                                                <option value="30">過去30日間</option>
+                                                <option value="90">過去90日間</option>
+                                                <option value="YTD">今年度 (1/1〜現在)</option>
+                                                <option value="CUSTOM">カスタム範囲指定</option>
+                                            </select>
+                                        </div>
+
+                                        {/* Action buttons (Download & Upload) */}
+                                        <div className="grid grid-cols-2 gap-2 items-end">
+                                            <button
+                                                onClick={handleExportCSV}
+                                                className="w-full bg-slate-700 hover:bg-slate-600 text-slate-100 py-2 px-3 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center space-x-1.5"
+                                                title="現在のフィルター結果をCSVにダウンロードします"
+                                            >
+                                                <SVGIcon name="Download" className="w-3.5 h-3.5" />
+                                                <span>CSV出力</span>
+                                            </button>
+                                            
+                                            {/* 新機能: CSVデータ復旧ボタン */}
+                                            <button
+                                                onClick={() => fileInputRef.current?.click()}
+                                                className="w-full bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-800/40 py-2 px-3 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center space-x-1.5"
+                                                title="エクスポートしたCSVファイルを選択して、ローカルデータを一括復旧します"
+                                            >
+                                                <SVGIcon name="Upload" className="w-3.5 h-3.5" />
+                                                <span>データ復旧</span>
+                                            </button>
+                                            
+                                            {/* 非表示のファイルピッカー */}
+                                            <input
+                                                type="file"
+                                                ref={fileInputRef}
+                                                onChange={handleImportCSV}
+                                                accept=".csv"
+                                                className="hidden"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Custom Period Box */}
+                                {filterPeriod === 'CUSTOM' && (
+                                    <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-700 flex flex-wrap items-center gap-3">
+                                        <span className="text-xs font-semibold text-slate-300">カスタム範囲:</span>
+                                        
+                                        {/* 開始日 */}
+                                        <div className="relative inline-block w-40">
+                                            <div className="absolute inset-0 flex items-center pl-2.5 text-xs text-slate-200 pointer-events-none z-10 font-medium">
+                                                {filterStartDate ? formatDateWithDay(filterStartDate) : "開始日を選択"}
+                                            </div>
+                                            <input
+                                                type="date"
+                                                value={filterStartDate}
+                                                onChange={(e) => setFilterStartDate(e.target.value)}
+                                                className="w-full bg-slate-800 border border-slate-700 rounded-lg py-1 pl-2 text-xs text-transparent select-none cursor-pointer relative z-0"
+                                                style={{ colorScheme: 'dark' }}
+                                            />
+                                        </div>
+                                        
+                                        <span className="text-slate-500 text-xs">〜</span>
+                                        
+                                        {/* 終了日 */}
+                                        <div className="relative inline-block w-40">
+                                            <div className="absolute inset-0 flex items-center pl-2.5 text-xs text-slate-200 pointer-events-none z-10 font-medium">
+                                                {filterEndDate ? formatDateWithDay(filterEndDate) : "終了日を選択"}
+                                            </div>
+                                            <input
+                                                type="date"
+                                                value={filterEndDate}
+                                                onChange={(e) => setFilterEndDate(e.target.value)}
+                                                className="w-full bg-slate-800 border border-slate-700 rounded-lg py-1 pl-2 text-xs text-transparent select-none cursor-pointer relative z-0"
+                                                style={{ colorScheme: 'dark' }}
+                                            />
+                                        </div>
+                                        
+                                        <button
+                                            onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }}
+                                            className="text-[11px] text-slate-400 hover:text-slate-200 underline pl-1"
+                                        >
+                                            clear
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* Main Table list */}
+                                {filteredExpenses.length === 0 ? (
+                                    <div className="text-center py-16 bg-slate-900/30 rounded-2xl border border-dashed border-slate-700/60">
+                                        <SVGIcon name="Database" className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+                                        <p className="text-slate-400 font-semibold">データが1件も見つかりません</p>
+                                        <p className="text-xs text-slate-500 mt-1">
+                                            上のフィルター条件を変更するか、経費を追加してください。
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="overflow-x-auto">
+                                        {/* Desktop View */}
+                                        <table className="w-full text-left border-collapse hidden md:table">
+                                            <thead>
+                                                <tr className="border-b border-slate-800 text-slate-400 text-xs uppercase font-bold">
+                                                    <th className="py-3 px-2 w-[100px]">状態</th>
+                                                    <th className="py-3 px-2 w-[150px]">日付</th>
+                                                    <th className="py-3 px-2 w-[140px]">勘定科目</th>
+                                                    <th className="py-3 px-2 w-[160px]">支払先</th>
+                                                    <th className="py-3 px-2 text-right w-[120px]">金額 (税込)</th>
+                                                    <th className="py-3 px-4">内容・メモ</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-800/60 text-sm">
+                                                {filteredExpenses.map((item) => (
+                                                    <tr 
+                                                        key={item.id} 
+                                                        className={`hover:bg-slate-800/30 transition-colors ${
+                                                            item.noReceipt ? 'bg-amber-950/5 hover:bg-amber-950/10' : ''
+                                                        }`}
+                                                    >
+                                                        <td className="py-3.5 px-2">
+                                                            <button
+                                                                onClick={() => handleToggleNoReceipt(item.id, item.noReceipt)}
+                                                                className={`flex items-center space-x-1.5 px-2 py-1 rounded text-[11px] font-bold border transition-all ${
+                                                                    item.noReceipt 
+                                                                        ? 'bg-amber-950 text-amber-400 border-amber-800 hover:bg-amber-900/50' 
+                                                                        : 'bg-slate-900 text-slate-500 border-slate-800 hover:text-slate-300 hover:border-slate-700'
+                                                                }`}
+                                                                title="買ったのにレシートが無い・紛失した状態のチェックを切り替えます"
+                                                            >
+                                                                <span className={`w-2 h-2 rounded-full ${item.noReceipt ? 'bg-amber-400' : 'bg-slate-600'}`} />
+                                                                <span>{item.noReceipt ? 'レシート無' : '確認済'}</span>
+                                                            </button>
+                                                        </td>
+                                                        <td className="py-3.5 px-2 font-mono text-xs text-slate-300">{formatDateWithDay(item.date)}</td>
+                                                        <td className="py-3.5 px-2">
+                                                            <span className="bg-slate-900 border border-slate-700/60 text-slate-300 px-2.5 py-0.5 rounded-full text-xs font-medium">
+                                                                {item.category}
+                                                            </span>
+                                                        </td>
+                                                        <td className="py-3.5 px-2 font-semibold text-slate-200">{item.payee}</td>
+                                                        <td className="py-3.5 px-2 text-right font-extrabold text-emerald-400 font-mono">
+                                                            ¥{item.amount.toLocaleString()}
+                                                        </td>
+                                                        <td className="py-3.5 px-4 text-xs text-slate-400 max-w-[300px] truncate" title={item.description}>
+                                                            {item.description || <span className="text-slate-600 font-light italic">記述なし</span>}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+
+                                        {/* Mobile View */}
+                                        <div className="md:hidden space-y-3">
+                                            {filteredExpenses.map((item) => (
+                                                <div 
+                                                    key={item.id} 
+                                                    className={`p-4 rounded-xl border transition-all ${
+                                                        item.noReceipt 
+                                                            ? 'bg-amber-950/10 border-amber-900/50' 
+                                                            : 'bg-slate-900/50 border-slate-800'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <span className="text-xs text-slate-400 font-mono">{formatDateWithDay(item.date)}</span>
+                                                        <span className="bg-slate-800 border border-slate-700 text-slate-300 px-2 py-0.5 rounded-full text-[10px] font-medium">
+                                                            {item.category}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex justify-between items-baseline mb-2">
+                                                        <h4 className="font-bold text-slate-100 truncate pr-2">{item.payee}</h4>
+                                                        <span className="font-extrabold text-emerald-400 text-base font-mono">
+                                                            ¥{item.amount.toLocaleString()}
+                                                        </span>
+                                                    </div>
+                                                    {item.description && (
+                                                        <p className="text-xs text-slate-400 bg-slate-950/40 p-2 rounded mb-3">
+                                                            {item.description}
+                                                        </p>
+                                                    )}
+                                                    <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
+                                                        <span className="text-[11px] text-slate-500">レシート状態:</span>
+                                                        <button
+                                                            onClick={() => handleToggleNoReceipt(item.id, item.noReceipt)}
+                                                            className={`flex items-center space-x-1.5 px-3 py-1 rounded text-xs font-bold border ${
+                                                                item.noReceipt 
+                                                                    ? 'bg-amber-950 text-amber-400 border-amber-800' 
+                                                                    : 'bg-slate-800 text-slate-500 border-slate-700'
+                                                            }`}
+                                                        >
+                                                            <span>{item.noReceipt ? '⚠️ レシート無し' : '正常 (確認済)'}</span>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                <p className="text-xs text-slate-500 italic mt-4">
+                                    ※ 金額の間違いなどがあった場合は、同期先のスプレッドシート（Google Sheets）を直接開いて簡単に一括修正・削除を行えます。ツールを再度手動同期すれば、すぐに変更が反映されます。
+                                </p>
+                            </div>
+                        )}
+                    </main>
+
+                    {/* Settings Modal */}
+                    {showSettings && (
+                        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+                            <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-2xl p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto animate-fadeIn">
+                                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                                    <h3 className="text-lg font-bold text-slate-100 flex items-center space-x-2">
+                                        <SVGIcon name="Settings" className="w-5 h-5 text-emerald-400" />
+                                        <span>Googleスプレッドシート同期設定</span>
+                                    </h3>
+                                    <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-slate-100 p-1">
+                                        <SVGIcon name="X" className="w-5 h-5" />
+                                    </button>
+                                </div>
+
+                                <div className="space-y-4 text-sm">
+                                    {/* Google Sites / Workspace 独自ドメイン公開用 特設解決マニュアル */}
+                                    <div className="bg-amber-950/40 border border-amber-800 p-4 rounded-xl space-y-2.5 animate-fadeIn">
+                                        <div className="flex items-center space-x-2 text-amber-400 font-bold">
+                                            <SVGIcon name="AlertCircle" className="w-5 h-5 text-amber-400 flex-shrink-0" />
+                                            <span className="text-xs">Google サイト & 独自ドメインでの重要設定ガイド</span>
+                                        </div>
+                                        <p className="text-xs text-slate-300 leading-relaxed font-semibold">
+                                            Google サイト（Google Sites）を標準URL（<code>sites.google.com/rensekkei.com/...</code>）で開いている状態で同期ボタンを押すと、OAuthの仕様上<strong>「 Error 400: invalid_request（アクセスをブロック） 」</strong>が必ず発生します。
+                                        </p>
+                                        
+                                        <button 
+                                            type="button" 
+                                            onClick={() => setShowLocalFileHelp(!showLocalFileHelp)}
+                                            className="text-[11px] text-emerald-400 hover:underline flex items-center space-x-1 font-bold"
+                                        >
+                                            <span>{showLocalFileHelp ? '▲ 設定手順を閉じる' : '▼ 設定手順を表示する'}</span>
+                                        </button>
+
+                                        {showLocalFileHelp && (
+                                            <div className="p-3.5 bg-slate-950/80 rounded-xl mt-2 text-xs text-slate-300 space-y-2 leading-relaxed animate-fadeIn">
+                                                <p className="font-bold text-slate-200">【400エラーを100%解決するステップ】</p>
+                                                <ol className="list-decimal list-inside space-y-2 text-slate-300">
+                                                    <li>
+                                                        <strong>独自ドメイン側のURLから直接アクセスする</strong><br />
+                                                        Googleサイトの設定（カスタムドメイン）で割り当てたURL（例: <code>https://openeer.rensekkei.com</code>）をブラウザに入力してツールを開いてください。<br />
+                                                        <span className="text-rose-400 font-bold">※ sites.google.com から始まる標準アドレスでは、Google側のセキュリティ仕様で同期できません。</span>
+                                                    </li>
+                                                    <li>
+                                                        <strong>Google Cloud の JavaScript 生成元を修正する</strong><br />
+                                                        Google Cloud Console の「承認済みの JavaScript 生成元」に、後ろのスラッシュや余計なパスを<strong>一切含まない</strong>、純粋な独自ドメイン名（例: <code>https://openeer.rensekkei.com</code>）を登録して保存します。
+                                                    </li>
+                                                    <li>
+                                                        これでブラウザのアクセス先とGoogleの許可リストが完全に一致し、400エラーが消えて同期が100%稼働します！
+                                                    </li>
+                                                </ol>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800 space-y-2">
+                                        <h4 className="font-bold text-xs text-emerald-400 uppercase">同期システム</h4>
+                                        <p className="text-xs text-slate-400 leading-relaxed">
+                                            本ツールは、あなたご自身のGoogleスプレッドシートを外部のサーバーを通さずに、ブラウザからダイレクトに書き換えを行います。セキュアで最速 of クラウド同期を実現します。
+                                        </p>
+                                    </div>
+
+                                    {/* Client ID */}
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-semibold text-slate-400 block">Google OAuth クライアントID</label>
+                                        <input
+                                            type="text"
+                                            placeholder="例：xxxx-xxxx.apps.googleusercontent.com"
+                                            value={settings.clientId}
+                                            onChange={(e) => setSettings({ ...settings, clientId: e.target.value })}
+                                            className={`w-full bg-slate-950 border rounded-xl py-2 px-3 text-xs font-mono focus:outline-none focus:border-emerald-500 text-slate-200 ${
+                                                isClientIdInvalid ? 'border-rose-500 focus:border-rose-500' : 'border-slate-800'
+                                            }`}
+                                        />
+                                        
+                                        {/* クライアントIDに入力間違いがあった場合に親切に即時警告するリアルタイムバリデーション */}
+                                        {isClientIdInvalid && (
+                                            <div className="bg-rose-950/30 border border-rose-900/50 p-2.5 rounded-lg text-[11px] text-rose-300 font-semibold flex items-start space-x-1.5 animate-fadeIn">
+                                                <SVGIcon name="AlertCircle" className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                                                <span>
+                                                    設定値にメールアドレス（@など）が入力されています。<br />
+                                                    Google Cloud Consoleで取得した「<strong>.apps.googleusercontent.com</strong>」で終わる形式の<strong>クライアントID</strong>を入力してください。
+                                                </span>
+                                            </div>
+                                        )}
+                                        
+                                        <p className="text-[10px] text-slate-500">
+                                            ※ Google Cloud Console上でご自身で発行したクライアントIDをご指定ください。
+                                        </p>
+                                    </div>
+
+                                    {/* Spreadsheet ID */}
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-semibold text-slate-400 block">Google スプレッドシートID</label>
+                                        <input
+                                            type="text"
+                                            placeholder="スプレッドシートID、またはブラウザのURLを貼り付け"
+                                            value={settings.spreadsheetId}
+                                            onChange={(e) => {
+                                                let val = e.target.value;
+                                                const match = val.match(/\/d\/([a-zA-Z0-9-_]+)/);
+                                                if (match) val = match[1];
+                                                setSettings({ ...settings, spreadsheetId: val });
+                                            }}
+                                            className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2 px-3 text-xs font-mono focus:outline-none focus:border-emerald-500 text-slate-200"
+                                        />
+                                        <p className="text-[10px] text-slate-500">
+                                            ※ URLをまるごと貼り付けても自動でIDを抽出します。
+                                        </p>
+                                    </div>
+
+                                    {/* Enable toggle */}
+                                    <div className="flex items-center justify-between p-3 bg-slate-950/40 border border-slate-800 rounded-xl">
+                                        <div>
+                                            <span className="font-bold text-xs text-slate-200 block">Googleスプレッドシート同期をオンにする</span>
+                                            <span className="text-[10px] text-slate-500">オフ時はお使いの端末ブラウザ内部にのみ安全に保存されます。</span>
+                                        </div>
+                                        <input
+                                            type="checkbox"
+                                            checked={settings.useGoogleSync}
+                                            onChange={(e) => setSettings({ ...settings, useGoogleSync: e.target.checked })}
+                                            className="w-4.5 h-4.5 rounded text-emerald-500 bg-slate-950 border-slate-800 cursor-pointer"
+                                        />
+                                    </div>
+
+                                    {/* OAuth buttons */}
+                                    <div className="grid grid-cols-2 gap-3 pt-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleGoogleLogin}
+                                            className={`flex items-center justify-center space-x-1.5 py-2.5 px-3 rounded-xl text-xs font-bold transition-all border ${
+                                                isGoogleConnected 
+                                                    ? 'bg-emerald-950 border-emerald-800 text-emerald-400' 
+                                                    : 'bg-emerald-500 border-transparent text-slate-950 hover:bg-emerald-400'
+                                            }`}
+                                        >
+                                            <SVGIcon name="CloudLightning" className="w-4 h-4" />
+                                            <span>{isGoogleConnected ? 'Google認証済み' : 'Googleアカウントと連携'}</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={handleCreateNewSpreadsheet}
+                                            disabled={!isGoogleConnected || isLoading}
+                                            className="flex items-center justify-center space-x-1.5 bg-slate-800 border border-slate-700 hover:bg-slate-700 disabled:bg-slate-950 disabled:border-slate-900 disabled:text-slate-600 py-2.5 px-3 rounded-xl text-xs font-bold text-slate-200 transition-colors"
+                                        >
+                                            <SVGIcon name="FileSpreadsheet" className="w-4 h-4" />
+                                            <span>新規シートを自動生成</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="pt-3 border-t border-slate-800 text-right">
+                                    <button
+                                        onClick={() => setShowSettings(false)}
+                                        className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-xl text-xs font-bold"
+                                    >
+                                        閉じる
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Category Manager Modal */}
+                    {showCategoryManager && (
+                        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+                            <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 space-y-4 shadow-2xl">
+                                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                                    <h3 className="text-lg font-bold text-slate-100 flex items-center space-x-2">
+                                        <SVGIcon name="Folder" className="w-5 h-5 text-emerald-400" />
+                                        <span>勘定科目のカスタマイズ</span>
+                                    </h3>
+                                    <button onClick={() => setShowCategoryManager(false)} className="text-slate-400 hover:text-slate-100 p-1">
+                                        <SVGIcon name="X" className="w-5 h-5" />
+                                    </button>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-semibold text-slate-400 block">新しく追加する科目名</label>
+                                    <div className="flex space-x-2">
+                                        <input
+                                            type="text"
+                                            placeholder="例：支払家賃、交際費、車両費"
+                                            value={newCategoryName}
+                                            onChange={(e) => setNewCategoryName(e.target.value)}
+                                            className="flex-1 bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs focus:outline-none focus:border-emerald-500 text-slate-200"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={handleAddCategory}
+                                            disabled={isLoading}
+                                            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 rounded-xl text-xs flex items-center space-x-1"
+                                        >
+                                            <SVGIcon name="Plus" className="w-4 h-4" />
+                                            <span>追加</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-xs font-semibold text-slate-400 block">登録中の勘定科目</label>
+                                    <div className="bg-slate-950/40 border border-slate-800 p-2.5 rounded-xl max-h-60 overflow-y-auto space-y-1.5 divide-y divide-slate-900">
+                                        {categories.map((cat, idx) => (
+                                            <div key={idx} className="flex justify-between items-center text-xs py-2 px-1.5">
+                                                <span className="text-slate-200 font-medium">{cat}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleDeleteCategory(cat)}
+                                                    disabled={isLoading}
+                                                    className="text-slate-500 hover:text-rose-400 p-1 rounded transition-colors"
+                                                >
+                                                    <SVGIcon name="Trash2" className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="pt-3 border-t border-slate-800 flex justify-between items-center">
+                                    <p className="text-[10px] text-slate-500">※ 同期有効時は即時にクラウド変更されます。</p>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowCategoryManager(false)}
+                                        className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-xl text-xs font-bold"
+                                    >
+                                        閉じる
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <footer className="border-t border-slate-800 bg-slate-950 py-4 px-4 text-center text-xs text-slate-500 mt-auto">
+                        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-2">
+                            <p>© 2026 Openeer - 開業費プールマネージャー. All Rights Reserved.</p>
+                            <p className="text-[10px] text-slate-600">フロントエンドOAuth2認証 / Google Sheets API 直接連携</p>
+                        </div>
+                    </footer>
+                </div>
+            );
+        }
+
+        const rootElement = document.getElementById('root');
+        const root = ReactDOM.createRoot(rootElement);
+        root.render(<App />);
+    </script>
+</body>
+</html>
