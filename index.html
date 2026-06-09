@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Openeer - 開業準備経費マネージャー</title>
+    <title>Openeer - 開業準備経費マネージャー Ver 1.01</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React & ReactDOM -->
+    <!-- React & ReactDOM (No 'crossorigin' attribute for perfect file:// compatibility) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <!-- Babel on-the-fly compiler -->
@@ -302,7 +302,8 @@
                 }
             }
 
-            // 【完全決着】Google Sheets API v4のGAPI通信エラー（404）を完全に叩き潰すサニタイズ処理を搭載
+            // 【完全決着】Google Sheets API v4 の GAPI 通信エラー（404）を完全に叩き潰すため、
+            // 内部ベースURL依存を排除し、sheets.googleapis.com への「完全修飾フルURL」を path に指定する設計に換装。
             async function callSheetsApi(apiEndpointPath, method = 'GET', body = null, token = null) {
                 const accessToken = token || googleToken?.access_token;
                 if (!accessToken) {
@@ -313,10 +314,11 @@
                     window.gapi.client.setToken({ access_token: accessToken });
                 }
 
-                // 1. パスのクリーニング（ホスト名や重複プレフィックスを完全に除去して /spreadsheets から始まるように一本化）
+                // 1. パスのクリーニング（ホスト名や重複するバージョン表記などをきれいに除去）
                 let cleanPath = apiEndpointPath
                     .replace('https://sheets.googleapis.com', '')
                     .replace('/v1', '')
+                    .replace('/v4', '')
                     .replace('/sheets', '');
 
                 if (!cleanPath.startsWith('/spreadsheets')) {
@@ -339,14 +341,16 @@
                     }
                 }
 
-                // 3. 日本語シート名（マルチバイト非ASCII文字）のみをピンポイントで安全にURLエンコードする最強正規表現
-                // これにより、感嘆符「!」や範囲指定のコロン「:」、メソッド命令「:append」を100%安全に保護します
+                // 3. 日本語シート名（マルチバイト文字）部分のみを100%安全にピンポイントURLエンコード
                 cleanPath = cleanPath.replace(/[^\x00-\x7F]+/g, (match) => encodeURIComponent(match));
 
+                // 4. ベースURLの置換問題を防ぐため、「完全修飾URL（https://...）」を path 引数に設定する
+                // これにより、GAPIがデフォルトの汎用URLを合体させるバグを100%根絶します。
+                const fullUrl = `https://sheets.googleapis.com/v4${cleanPath}`;
+
                 try {
-                    // 4. GAPIライブラリの正しいインターフェースに則り、分離した path, method, params を綺麗に流し込む
                     const response = await window.gapi.client.request({
-                        path: `/v4${cleanPath}`,
+                        path: fullUrl,
                         method: method,
                         params: Object.keys(queryParams).length > 0 ? queryParams : undefined,
                         body: body ? body : undefined
@@ -826,6 +830,7 @@
 
             return (
                 <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans antialiased">
+                    {/* Header */}
                     <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-30 px-4 py-3">
                         <div className="max-w-6xl mx-auto flex items-center justify-between">
                             <div className="flex items-center space-x-3">
@@ -834,7 +839,7 @@
                                 </div>
                                 <div>
                                     <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
-                                        Openeer
+                                        Openeer <span className="text-xs bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 px-2 py-0.5 rounded-full ml-1.5 font-semibold">Ver 1.01</span>
                                     </h1>
                                     <p className="text-xs text-slate-400">開業費プールマネージャー</p>
                                 </div>
@@ -861,6 +866,7 @@
                         </div>
                     </header>
 
+                    {/* Main Layout */}
                     <main className="flex-1 max-w-6xl w-full mx-auto p-4 md:p-6 space-y-6">
                         {errorMsg && (
                             <div className="bg-rose-950/80 border border-rose-800 text-rose-200 p-4 rounded-xl flex items-start space-x-3 shadow-xl transition-all animate-fadeIn">
@@ -887,6 +893,7 @@
                             </div>
                         )}
 
+                        {/* Top Cards Section */}
                         <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/60 p-5 rounded-2xl relative overflow-hidden shadow-md">
                                 <div className="absolute top-0 right-0 p-8 opacity-5">
@@ -951,6 +958,7 @@
                             </div>
                         </section>
 
+                        {/* Navigation Tabs */}
                         <div className="flex border-b border-slate-800">
                             <button
                                 onClick={() => setActiveTab('add')}
@@ -974,6 +982,7 @@
                             </button>
                         </div>
 
+                        {/* Main Tab Views */}
                         {activeTab === 'add' && (
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fadeIn">
                                 <div className="lg:col-span-2 bg-slate-800/40 border border-slate-700/60 p-6 rounded-2xl shadow-xl space-y-4">
@@ -1154,7 +1163,7 @@
                         )}
 
                         {activeTab === 'list' && (
-                            <div className="bg-slate-800/40 border border-slate-700/60 p-5 rounded-2xl shadow-xl space-y-6 animate-fadeIn">
+                            <div className="bg-slate-800/40 border border-slate-700/60 p-5 rounded-2xl shadow-xl space-y-6">
                                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-4 border-b border-slate-700">
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-grow">
                                         <div className="space-y-1">
@@ -1398,7 +1407,7 @@
                                             <span className="text-xs">Google サイト & 独自ドメインでの重要設定ガイド</span>
                                         </div>
                                         <p className="text-xs text-slate-300 leading-relaxed font-semibold">
-                                            Google サイト（Google Sites）を標準URLで開いている状態で同期ボタンを押すと、OAuth of 仕様上<strong>「 Error 400: invalid_request 」</strong>が必ず発生します。
+                                            Google サイト（Google Sites）を標準URLで開いている状態で同期ボタンを押すと、OAuthの仕様上<strong>「 Error 400: invalid_request 」</strong>が必ず発生します。
                                         </p>
                                         
                                         <button 
